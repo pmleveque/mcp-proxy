@@ -12,7 +12,11 @@ from mcp.client.session import ClientSession
 logger = logging.getLogger(__name__)
 
 
-async def create_proxy_server(remote_app: ClientSession) -> server.Server[object]:  # noqa: C901, PLR0915
+async def create_proxy_server(
+    remote_app: ClientSession,
+    *,
+    allowed_tools: list[str] | None = None,
+) -> server.Server[object]:  # noqa: C901, PLR0915
     """Create a server instance from a remote app."""
     logger.debug("Sending initialization request to remote MCP server...")
     response = await remote_app.initialize()
@@ -85,12 +89,27 @@ async def create_proxy_server(remote_app: ClientSession) -> server.Server[object
         logger.debug("Capabilities: adding Tools...")
 
         async def _list_tools(_: t.Any) -> types.ServerResult:  # noqa: ANN401
-            tools = await remote_app.list_tools()
-            return types.ServerResult(tools)
+            result = await remote_app.list_tools()
+            tools = result.tools
+            if allowed_tools is not None:
+                tools = [tool for tool in tools if tool.name in allowed_tools]
+            return types.ServerResult(types.ListToolsResult(tools=tools))
 
         app.request_handlers[types.ListToolsRequest] = _list_tools
 
         async def _call_tool(req: types.CallToolRequest) -> types.ServerResult:
+            if allowed_tools is not None and req.params.name not in allowed_tools:
+                return types.ServerResult(
+                    types.CallToolResult(
+                        content=[
+                            types.TextContent(
+                                type="text",
+                                text="Tool not allowed",
+                            ),
+                        ],
+                        isError=True,
+                    ),
+                )
             try:
                 result = await remote_app.call_tool(
                     req.params.name,

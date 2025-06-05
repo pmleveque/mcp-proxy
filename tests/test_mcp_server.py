@@ -11,6 +11,8 @@ import uvicorn
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.stdio import StdioServerParameters
+
+from mcp_proxy import ServerConfig
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.server import FastMCP, Server
 from mcp.types import TextContent
@@ -184,13 +186,15 @@ def mock_settings() -> MCPServerSettings:
 
 
 @pytest.fixture
-def mock_stdio_params() -> StdioServerParameters:
-    """Create mock stdio server parameters for testing."""
-    return StdioServerParameters(
-        command="echo",
-        args=["hello"],
-        env={"TEST_VAR": "test_value"},
-        cwd="/tmp",  # noqa: S108
+def mock_stdio_params() -> ServerConfig:
+    """Create mock server configuration for testing."""
+    return ServerConfig(
+        stdio_params=StdioServerParameters(
+            command="echo",
+            args=["hello"],
+            env={"TEST_VAR": "test_value"},
+            cwd="/tmp",  # noqa: S108
+        ),
     )
 
 
@@ -242,7 +246,7 @@ async def test_run_mcp_server_no_servers_configured(mock_settings: MCPServerSett
 
 async def test_run_mcp_server_with_default_server(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server with a default server configuration."""
     with (
@@ -271,32 +275,37 @@ async def test_run_mcp_server_with_default_server(
         await run_mcp_server(mock_settings, mock_stdio_params, {})
 
         # Verify calls
-        mock_stdio_client.assert_called_once_with(mock_stdio_params)
-        mock_create_proxy.assert_called_once_with(mock_session)
+        mock_stdio_client.assert_called_once_with(mock_stdio_params.stdio_params)
+        mock_create_proxy.assert_called_once_with(
+            mock_session,
+            allowed_tools=mock_stdio_params.tools,
+        )
         mock_create_routes.assert_called_once_with(
             mock_proxy,
             stateless_instance=mock_settings.stateless,
         )
         mock_logger.info.assert_any_call(
             "Setting up default server: %s %s",
-            mock_stdio_params.command,
-            " ".join(mock_stdio_params.args),
+            mock_stdio_params.stdio_params.command,
+            " ".join(mock_stdio_params.stdio_params.args),
         )
         mock_server_instance.serve.assert_called_once()
 
 
 async def test_run_mcp_server_with_named_servers(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server with named servers configuration."""
     named_servers = {
         "server1": mock_stdio_params,
-        "server2": StdioServerParameters(
-            command="python",
-            args=["-m", "mcp_server"],
-            env={"PYTHON_PATH": "/usr/bin/python"},
-            cwd="/home/user",
+        "server2": ServerConfig(
+            stdio_params=StdioServerParameters(
+                command="python",
+                args=["-m", "mcp_server"],
+                env={"PYTHON_PATH": "/usr/bin/python"},
+                cwd="/home/user",
+            ),
         ),
     }
 
@@ -334,8 +343,8 @@ async def test_run_mcp_server_with_named_servers(
         mock_logger.info.assert_any_call(
             "Setting up named server '%s': %s %s",
             "server1",
-            mock_stdio_params.command,
-            " ".join(mock_stdio_params.args),
+            mock_stdio_params.stdio_params.command,
+            " ".join(mock_stdio_params.stdio_params.args),
         )
         mock_logger.info.assert_any_call(
             "Setting up named server '%s': %s %s",
@@ -348,7 +357,7 @@ async def test_run_mcp_server_with_named_servers(
 
 
 async def test_run_mcp_server_with_cors_middleware(
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server adds CORS middleware when allow_origins is set."""
     settings_with_cors = MCPServerSettings(
@@ -392,7 +401,7 @@ async def test_run_mcp_server_with_cors_middleware(
 
 
 async def test_run_mcp_server_debug_mode(
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server with debug mode enabled."""
     debug_settings = MCPServerSettings(
@@ -433,7 +442,7 @@ async def test_run_mcp_server_debug_mode(
 
 
 async def test_run_mcp_server_stateless_mode(
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server with stateless mode enabled."""
     stateless_settings = MCPServerSettings(
@@ -475,7 +484,7 @@ async def test_run_mcp_server_stateless_mode(
 
 async def test_run_mcp_server_uvicorn_config(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server creates correct uvicorn configuration."""
     with (
@@ -517,7 +526,7 @@ async def test_run_mcp_server_uvicorn_config(
 
 async def test_run_mcp_server_global_status_updates(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server updates global status correctly."""
     from mcp_proxy.mcp_server import _global_status
@@ -560,7 +569,7 @@ async def test_run_mcp_server_global_status_updates(
 
 async def test_run_mcp_server_sse_url_logging(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server logs correct SSE URLs."""
     named_servers = {"test_server": mock_stdio_params}
@@ -603,7 +612,7 @@ async def test_run_mcp_server_sse_url_logging(
 
 async def test_run_mcp_server_exception_handling(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server handles exceptions properly."""
     with (
@@ -623,7 +632,7 @@ async def test_run_mcp_server_exception_handling(
 
 async def test_run_mcp_server_both_default_and_named_servers(
     mock_settings: MCPServerSettings,
-    mock_stdio_params: StdioServerParameters,
+    mock_stdio_params: ServerConfig,
 ) -> None:
     """Test run_mcp_server with both default and named servers."""
     named_servers = {"named_server": mock_stdio_params}
@@ -661,14 +670,14 @@ async def test_run_mcp_server_both_default_and_named_servers(
         # Verify logging for both servers
         mock_logger.info.assert_any_call(
             "Setting up default server: %s %s",
-            mock_stdio_params.command,
-            " ".join(mock_stdio_params.args),
+            mock_stdio_params.stdio_params.command,
+            " ".join(mock_stdio_params.stdio_params.args),
         )
         mock_logger.info.assert_any_call(
             "Setting up named server '%s': %s %s",
             "named_server",
-            mock_stdio_params.command,
-            " ".join(mock_stdio_params.args),
+            mock_stdio_params.stdio_params.command,
+            " ".join(mock_stdio_params.stdio_params.args),
         )
 
         mock_server_instance.serve.assert_called_once()

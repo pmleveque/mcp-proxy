@@ -41,6 +41,18 @@ async def proxy(server: Server[object]) -> AsyncGenerator[ClientSession, None]:
             yield wrapped_session
 
 
+@asynccontextmanager
+async def proxy_limited(
+    server: Server[object],
+    allowed: list[str],
+) -> AsyncGenerator[ClientSession, None]:
+    """Create a proxy connection only exposing selected tools."""
+    async with in_memory(server) as session:
+        wrapped_server = await create_proxy_server(session, allowed_tools=allowed)
+        async with in_memory(wrapped_server) as wrapped_session:
+            yield wrapped_session
+
+
 @pytest.fixture(params=["server", "proxy"])
 def session_generator(request: pytest.FixtureRequest) -> SessionContextManager:
     """Fixture that returns a client creation strategy either direct or using the proxy."""
@@ -513,3 +525,50 @@ async def test_call_tool_with_error(
 
         call_tool_result = await session.call_tool("tool", {})
         assert call_tool_result.isError
+
+
+async def test_allowed_tool_filtering_listed() -> None:
+    """Proxy should expose only configured tools."""
+    server = Server("test")
+    tool_info = types.Tool(name="tool", description="d", inputSchema=TOOL_INPUT_SCHEMA)
+
+    @server.list_tools()  # type: ignore[no-untyped-call,misc]
+    async def _list() -> list[types.Tool]:
+        return [tool_info]
+
+    call_mock = AsyncMock(return_value=[])
+
+    @server.call_tool()  # type: ignore[no-untyped-call]
+    async def _call(name: str, args: dict) -> list[types.TextContent]:
+        return await call_mock(name, args)
+
+    async with proxy_limited(server, ["tool"]) as session:
+        await session.initialize()
+        tools_list = await session.list_tools()
+        assert [t.name for t in tools_list.tools] == ["tool"]
+        call_result = await session.call_tool("tool", {})
+        assert not call_result.isError
+        call_mock.assert_called_once_with("tool", {})
+
+
+async def test_allowed_tool_filtering_hidden() -> None:
+    """Proxy should block tools not on the allowed list."""
+    server = Server("test")
+    tool_info = types.Tool(name="tool", description="d", inputSchema=TOOL_INPUT_SCHEMA)
+
+    @server.list_tools()  # type: ignore[no-untyped-call,misc]
+    async def _list() -> list[types.Tool]:
+        return [tool_info]
+
+    call_mock = AsyncMock(return_value=[])
+
+    @server.call_tool()  # type: ignore[no-untyped-call]
+    async def _call(name: str, args: dict) -> list[types.TextContent]:
+        return await call_mock(name, args)
+
+    async with proxy_limited(server, []) as session:
+        await session.initialize()
+        tools_list = await session.list_tools()
+        assert tools_list.tools == []
+        call_result = await session.call_tool("tool", {})
+        assert call_result.isError
