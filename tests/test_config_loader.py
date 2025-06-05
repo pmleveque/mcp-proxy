@@ -8,8 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from mcp.client.stdio import StdioServerParameters
-
+from mcp_proxy import ServerConfig
 from mcp_proxy.config_loader import load_named_server_configs_from_file
 
 
@@ -57,16 +56,33 @@ def test_load_valid_config(create_temp_config_file: Callable[[dict], str]) -> No
     loaded_params = load_named_server_configs_from_file(tmp_config_path, base_env)
 
     assert "server1" in loaded_params
-    assert loaded_params["server1"].command == "echo"
-    assert loaded_params["server1"].args == ["hello"]
+    assert isinstance(loaded_params["server1"], ServerConfig)
+    assert loaded_params["server1"].stdio_params.command == "echo"
+    assert loaded_params["server1"].stdio_params.args == ["hello"]
     assert (
-        loaded_params["server1"].env == base_env
-    )  # Env is a copy, check if it contains base_env items
+        loaded_params["server1"].stdio_params.env == base_env
+    )
 
     assert "server2" in loaded_params
-    assert loaded_params["server2"].command == "cat"
-    assert loaded_params["server2"].args == ["file.txt"]
-    assert loaded_params["server2"].env == base_env
+    assert loaded_params["server2"].stdio_params.command == "cat"
+    assert loaded_params["server2"].stdio_params.args == ["file.txt"]
+    assert loaded_params["server2"].stdio_params.env == base_env
+
+
+def test_load_config_with_tools(create_temp_config_file: Callable[[dict], str]) -> None:
+    """Test loading a configuration file with tools list."""
+    config_content = {
+        "mcpServers": {
+            "srv": {
+                "command": "cmd",
+                "tools": ["a", "b"],
+            }
+        }
+    }
+    tmp_config_path = create_temp_config_file(config_content)
+    loaded_params = load_named_server_configs_from_file(tmp_config_path, {})
+
+    assert loaded_params["srv"].tools == ["a", "b"]
 
 
 def test_load_config_with_not_enabled_server(
@@ -85,9 +101,15 @@ def test_load_config_with_not_enabled_server(
     loaded_params = load_named_server_configs_from_file(tmp_config_path, {})
 
     assert "explicitly_enabled_server" in loaded_params
-    assert loaded_params["explicitly_enabled_server"].command == "true_command"
+    assert (
+        loaded_params["explicitly_enabled_server"].stdio_params.command
+        == "true_command"
+    )
     assert "implicitly_enabled_server" in loaded_params
-    assert loaded_params["implicitly_enabled_server"].command == "another_true_command"
+    assert (
+        loaded_params["implicitly_enabled_server"].stdio_params.command
+        == "another_true_command"
+    )
     assert "not_enabled_server" not in loaded_params
 
 
@@ -136,12 +158,12 @@ def test_load_example_fetch_config_if_uvx_exists() -> None:
 
     assert "fetch" in loaded_params
     fetch_param = loaded_params["fetch"]
-    assert isinstance(fetch_param, StdioServerParameters)
-    assert fetch_param.command == "uvx"
-    assert fetch_param.args == ["mcp-server-fetch"]
-    assert fetch_param.env == base_env
+    assert isinstance(fetch_param, ServerConfig)
+    assert fetch_param.stdio_params.command == "uvx"
+    assert fetch_param.stdio_params.args == ["mcp-server-fetch"]
+    assert fetch_param.stdio_params.env == base_env
     # The 'timeout' and 'transportType' fields from the config are currently ignored by the loader,
-    # so no need to assert them on StdioServerParameters.
+    # so no need to assert them on ServerConfig.
 
 
 def test_invalid_config_format_missing_mcpservers(

@@ -9,13 +9,15 @@ from pathlib import Path
 
 from mcp.client.stdio import StdioServerParameters
 
+from .server_config import ServerConfig
+
 logger = logging.getLogger(__name__)
 
 
 def load_named_server_configs_from_file(
     config_file_path: str,
     base_env: dict[str, str],
-) -> dict[str, StdioServerParameters]:
+) -> dict[str, ServerConfig]:
     """Loads named server configurations from a JSON file.
 
     Args:
@@ -30,7 +32,7 @@ def load_named_server_configs_from_file(
         json.JSONDecodeError: If the config file contains invalid JSON.
         ValueError: If the config file format is invalid.
     """
-    named_stdio_params: dict[str, StdioServerParameters] = {}
+    named_stdio_params: dict[str, ServerConfig] = {}
     logger.info("Loading named server configurations from: %s", config_file_path)
 
     try:
@@ -83,11 +85,24 @@ def load_named_server_configs_from_file(
             )
             continue
 
-        named_stdio_params[name] = StdioServerParameters(
-            command=command,
-            args=command_args,
-            env=base_env.copy(),
-            cwd=None,
+        tools = server_config.get("tools")
+        if tools is not None and not (
+            isinstance(tools, list) and all(isinstance(t, str) for t in tools)
+        ):
+            logger.warning(
+                "Named server '%s' from config has invalid 'tools' (must be a list of strings). Skipping tools.",
+                name,
+            )
+            tools = None
+
+        named_stdio_params[name] = ServerConfig(
+            stdio_params=StdioServerParameters(
+                command=command,
+                args=command_args,
+                env=base_env.copy(),
+                cwd=None,
+            ),
+            tools=tools,
         )
         logger.info(
             "Configured named server '%s' from config: %s %s",

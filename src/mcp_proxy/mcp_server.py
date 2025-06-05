@@ -10,6 +10,8 @@ from typing import Any, Literal
 import uvicorn
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from .server_config import ServerConfig
 from mcp.server import Server as MCPServerSDK  # Renamed to avoid conflict
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -99,8 +101,8 @@ def create_single_instance_routes(
 
 async def run_mcp_server(
     mcp_settings: MCPServerSettings,
-    default_server_params: StdioServerParameters | None = None,
-    named_server_params: dict[str, StdioServerParameters] | None = None,
+    default_server_params: ServerConfig | None = None,
+    named_server_params: dict[str, ServerConfig] | None = None,
 ) -> None:
     """Run stdio client(s) and expose an MCP server with multiple possible backends."""
     if named_server_params is None:
@@ -123,12 +125,12 @@ async def run_mcp_server(
         if default_server_params:
             logger.info(
                 "Setting up default server: %s %s",
-                default_server_params.command,
-                " ".join(default_server_params.args),
+                default_server_params.stdio_params.command,
+                " ".join(default_server_params.stdio_params.args),
             )
-            stdio_streams = await stack.enter_async_context(stdio_client(default_server_params))
+            stdio_streams = await stack.enter_async_context(stdio_client(default_server_params.stdio_params))
             session = await stack.enter_async_context(ClientSession(*stdio_streams))
-            proxy = await create_proxy_server(session)
+            proxy = await create_proxy_server(session, allowed_tools=default_server_params.tools)
 
             instance_routes, http_manager = create_single_instance_routes(
                 proxy,
@@ -143,12 +145,12 @@ async def run_mcp_server(
             logger.info(
                 "Setting up named server '%s': %s %s",
                 name,
-                params.command,
-                " ".join(params.args),
+                params.stdio_params.command,
+                " ".join(params.stdio_params.args),
             )
-            stdio_streams_named = await stack.enter_async_context(stdio_client(params))
+            stdio_streams_named = await stack.enter_async_context(stdio_client(params.stdio_params))
             session_named = await stack.enter_async_context(ClientSession(*stdio_streams_named))
-            proxy_named = await create_proxy_server(session_named)
+            proxy_named = await create_proxy_server(session_named, allowed_tools=params.tools)
 
             instance_routes_named, http_manager_named = create_single_instance_routes(
                 proxy_named,

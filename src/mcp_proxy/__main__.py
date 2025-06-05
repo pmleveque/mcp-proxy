@@ -17,6 +17,8 @@ import typing as t
 
 from mcp.client.stdio import StdioServerParameters
 
+from .server_config import ServerConfig
+
 from .config_loader import load_named_server_configs_from_file
 from .mcp_server import MCPServerSettings, run_mcp_server
 from .sse_client import run_sse_client
@@ -225,7 +227,7 @@ def _configure_default_server(
     args_parsed: argparse.Namespace,
     base_env: dict[str, str],
     logger: logging.Logger,
-) -> StdioServerParameters | None:
+) -> ServerConfig | None:
     """Configure the default server if applicable."""
     if not (
         args_parsed.command_or_url
@@ -236,11 +238,13 @@ def _configure_default_server(
     default_server_env = base_env.copy()
     default_server_env.update(dict(args_parsed.env))  # Specific env vars for default server
 
-    default_stdio_params = StdioServerParameters(
-        command=args_parsed.command_or_url,
-        args=args_parsed.args,
-        env=default_server_env,
-        cwd=args_parsed.cwd if args_parsed.cwd else None,
+    default_stdio_params = ServerConfig(
+        stdio_params=StdioServerParameters(
+            command=args_parsed.command_or_url,
+            args=args_parsed.args,
+            env=default_server_env,
+            cwd=args_parsed.cwd if args_parsed.cwd else None,
+        ),
     )
     logger.info(
         "Configured default server: %s %s",
@@ -254,7 +258,7 @@ def _load_named_servers_from_config(
     config_path: str,
     base_env: dict[str, str],
     logger: logging.Logger,
-) -> dict[str, StdioServerParameters]:
+) -> dict[str, ServerConfig]:
     """Load named server configurations from a file."""
     try:
         return load_named_server_configs_from_file(config_path, base_env)
@@ -278,9 +282,9 @@ def _configure_named_servers_from_cli(
     named_server_definitions: list[tuple[str, str]],
     base_env: dict[str, str],
     logger: logging.Logger,
-) -> dict[str, StdioServerParameters]:
+) -> dict[str, ServerConfig]:
     """Configure named servers from CLI arguments."""
-    named_stdio_params: dict[str, StdioServerParameters] = {}
+    named_stdio_params: dict[str, ServerConfig] = {}
 
     for name, command_string in named_server_definitions:
         try:
@@ -293,11 +297,13 @@ def _configure_named_servers_from_cli(
             command_args = command_parts[1:]
             # Named servers inherit base_env (which includes passed-through env)
             # and use the proxy's CWD.
-            named_stdio_params[name] = StdioServerParameters(
-                command=command,
-                args=command_args,
-                env=base_env.copy(),  # Each named server gets a copy of the base env
-                cwd=None,  # Named servers run in the proxy's CWD
+            named_stdio_params[name] = ServerConfig(
+                stdio_params=StdioServerParameters(
+                    command=command,
+                    args=command_args,
+                    env=base_env.copy(),  # Each named server gets a copy of the base env
+                    cwd=None,  # Named servers run in the proxy's CWD
+                ),
             )
             logger.info("Configured named server '%s': %s", name, command_string)
         except IndexError:  # Should be caught by the check for empty command_parts
@@ -363,7 +369,7 @@ def main() -> None:
     default_stdio_params = _configure_default_server(args_parsed, base_env, logger)
 
     # Configure named servers
-    named_stdio_params: dict[str, StdioServerParameters] = {}
+    named_stdio_params: dict[str, ServerConfig] = {}
     if args_parsed.named_server_config:
         if args_parsed.named_server_definitions:
             logger.warning(

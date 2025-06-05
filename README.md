@@ -187,7 +187,8 @@ The JSON file should follow this structure:
       "args": [
         "mcp-server-fetch"
       ],
-      "transportType": "stdio"
+      "transportType": "stdio",
+      "tools": ["fetch"]
     },
     "github": {
       "timeout": 60,
@@ -383,7 +384,8 @@ Examples:
       "args": [
         "mcp-server-fetch"
       ],
-      "transportType": "stdio"
+      "transportType": "stdio",
+      "tools": ["fetch"]
     },
     "github": {
       "timeout": 60,
